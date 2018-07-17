@@ -44,27 +44,30 @@ namespace NLog.Targets.Gelf
         /// </summary>
         /// <param name="target">IP Endpoint of the  of the target GrayLog2 server</param>
         /// <param name="message">Message (in JSON) to log</param>
-        public void Send(IPEndPoint target, string message)
+        public void Send(IPEndPoint target, string message, int? overrideMaxUdpPackageSize = null)
         {
             var ipEndPoint = target;
 
             var compressedMessage = CompressMessage(message);
 
-            if (compressedMessage.Length > MaxMessageSizeInUdp)
+            int maxUdpSize = overrideMaxUdpPackageSize ?? MaxMessageSizeInUdp;
+            int maxMessageSize = maxUdpSize - 12;
+
+            if (compressedMessage.Length > maxUdpSize)
             {
                 //Our compressed message is too big to fit in a single datagram. Need to chunk...
                 //https://github.com/Graylog2/graylog2-docs/wiki/GELF "Chunked GELF"
 
-                var numberOfChunksRequired = compressedMessage.Length / MaxMessageSizeInChunk + 1;
+                var numberOfChunksRequired = compressedMessage.Length / maxMessageSize + 1;
                 if (numberOfChunksRequired > MaxNumberOfChunksAllowed) return;
 
                 var messageId = GenerateMessageId(compressedMessage);
 
                 for (var i = 0; i < numberOfChunksRequired; i++)
                 {
-                    var skip = i * MaxMessageSizeInChunk;
+                    var skip = i * maxMessageSize;
                     var messageChunkHeader = ConstructChunkHeader(messageId, i, numberOfChunksRequired);
-                    var messageChunkData = compressedMessage.Skip(skip).Take(MaxMessageSizeInChunk).ToArray();
+                    var messageChunkData = compressedMessage.Skip(skip).Take(maxMessageSize).ToArray();
 
                     var messageChunkFull = new byte[messageChunkHeader.Length + messageChunkData.Length];
                     messageChunkHeader.CopyTo(messageChunkFull, 0);
